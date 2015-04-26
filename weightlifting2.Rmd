@@ -1,0 +1,136 @@
+---
+title: "Coursera Practical Machine Learning Project"
+author: "dr Juhasz"
+subtitle: "Classifying Weight Lifting Exercise"
+output: html_document
+---
+##Executive summary  
+**Data**: extract from the *Qualitative Activity Recognition* data collected by Velloso et al. (2013)  contains  records from sensors worn by 6 subjects during physical exercising. It has 19622 data points with 160 features.  
+**Objectives**: The subjects were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of our project was to predict the manner (5 different ways) in which they did the exercise (classe variable) on the base of the other accelerator readings.  
+**Methods**: Classification, predictive methods: Random forests, Naive bayes, linear discriminant analysis, boosting. All methods were applied with 5-fold cross-validation.  
+**Resuls**: The randoms forest method yielded almost prerfect predictions appying to the holdup test set. Its accuracy exceded 99%. The Generalized Boosted Model (gbm) made predictions with accuracy more than 96%. The two further methods showed more out of sample errors. The naive Bayes' accuracy was just below 75%, but the linear discriminant analysis was not able to reach the 65%.   
+
+## Background  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement ??? a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project,  Velloso et al. (2013) goal was to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants(on body approach). They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.  
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes.  
+The goal of our project was to predict the manner (5 different ways) in which they did the exercise (classe variable) on the base of the other accelerator readings (variables).  
+
+## Exploring and cleaning dataset  
+The original source of the dataset:http: //groupware.les.inf.puc-rio.br/har, but it is accessible at the Practical Machine Learning course's homepage:
+
+```{r downloading , results='hide', cache=TRUE, echo=TRUE}
+setInternet2(use = TRUE)
+url1="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url2="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url1, destfile="pmltraining.csv")
+download.file(url2, destfile="pmltesting.csv")
+
+trainData=read.csv("pmltraining.csv")
+testUltimate=read.csv("pmltesting.csv")
+
+```  
+The second dataset serves the assessment's purpose of this assignment. We tried to fit a classification model using the first data.  
+There were originaly 160 columns (variables). 
+```{r dimensions}
+dim(trainData)
+```
+Any variables containing missing values were omitted.
+```{r, cache=TRUE, warning=FALSE}
+# function finding variables with missing values
+nacols <- function(x){
+  y <- sapply(x, function(xx)any(is.na(xx)))
+  names(y[y])
+}  
+# variables with missing vals
+misscol<-nacols(testUltimate)
+
+# omitting any variables containing any missing values 
+library(gdata)
+testUltimate=remove.vars(testUltimate, names=misscol, info=F)
+trainData=remove.vars(trainData, names=misscol, info=F)
+```  
+It resulted to 60 varibles. The first 8 columns were not sensor data. Because of we wanted to use only accelerator data to predict activity class, they were omitted, too. We worked the remaining 52 variables, out of them the last was the criterium variable, the classe.
+```{r, cache=TRUE}
+testUltimate<-testUltimate[,-(1:8)]
+trainData<-trainData[,-(1:8)]
+dim(trainData)
+```
+
+The possible multycollinearity was not eliminated. By Kuhn (2008): classification or regression trees, might be resistant to highly correlated predictors, but multicollinearity may negatively affect interpretability of the model. Our pupose was only prediction, and only classification method were applied.  
+The data set was split into training and test parts at the ratio of 3 to 1.
+```{r splitting test and training, results='hide', warning=FALSE, cache=FALSE, message=FALSE}
+library('caret')
+set.seed(1)
+inTrain <- createDataPartition(trainData$classe, p = 3/4, list = FALSE)
+training=trainData[inTrain,]
+testing=trainData[-inTrain,]
+
+```
+```{r dim}
+dim(training)
+dim(testing)
+```
+##Finding the best fit model  
+Four of the potential classifier models were tried: random forests, naive Bayes, linear discriminant analysis, boosting. In all cases 5-fold cross-validation was used to reduce the out of sample error, the variance (overfitting). 
+```{r}
+trcl<-trainControl(method="cv", number=5, allowParallel=T, verbose=T)
+```  
+### 1. Random forests  
+**Training and prediction**  
+```{r train rf, cache=TRUE, warning=FALSE, message=FALSE}
+fitrf<-train(classe~.,data=training, method="rf", trControl=trcl, verbose=F)
+# prediction and error statistics
+predRF<-predict(fitrf, newdata=testing)
+cmrf=confusionMatrix(predRF, testing$classe)
+cmrf
+```
+Accuracy: `r cmrf[[3]][1]`. Very low out-of sample error: 1 - Accuracy = `r 1- cmrf[[3]][1]`  
+
+### 2. Naive Bayes  
+**Training and prediction** 
+```{r train nb, cache=TRUE, warning=FALSE, results='hide', message=FALSE}
+fitnb<-train(classe~.,data=training, method="nb", trControl=trcl, verbose=F)
+# prediction and error statistics
+predNB<-predict(fitnb, newdata=testing)
+cmnb=confusionMatrix(predNB, testing$classe)
+```  
+Accuracy: `r cmnb[[3]][1]`. Other statistics are hidden.   
+It is far more imprecise than random forests.
+
+### 3. Linear Discriminant Analysis
+**Training and prediction** 
+```{r train lda, cache=TRUE, warning=FALSE, results='hide', message=FALSE}
+fitlda<-train(classe~.,data=training, method="lda", trControl=trcl, verbose=F)
+predLDA<-predict(fitlda, newdata=testing)
+cmlda=confusionMatrix(predLDA, testing$classe) 
+
+```  
+Accuracy: `r cmlda[[3]][1]`. Other statistics are hidden.   
+It is far more imprecise than random forests.
+
+### 4. Boosting (Generalized Boosted Model)  
+**Training and prediction**  
+```{r train gbm, cache=TRUE, warning=FALSE, results='hide', message=FALSE }
+fitgbm<-train(classe~.,data=training, method="gbm", trControl=trcl, verbose=F)
+predGBM<-predict(fitgbm, newdata=testing)
+cmgbm=confusionMatrix(predGBM, testing$classe)
+
+```
+Accuracy: `r cmgbm[[3]][1]`. Other statistics are hidden.   
+It is slightly more imprecise than random forests. 
+
+## Prediction of the 20 test cases  
+The random forests model was applied, it yielded the best fitting predictions during the learning phase.
+```{r test prediction, cache=TRUE, warning=FALSE, message=FALSE}
+answers<-predict(fitrf, newdata=testUltimate)
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+
+```
